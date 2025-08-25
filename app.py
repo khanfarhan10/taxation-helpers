@@ -1,58 +1,75 @@
-# Streamlit Home Loan vs Cash Simulator
+# Streamlit Home Loan vs Rent Simulator
 # Save as streamlit_home_loan_simulator.py and run with: streamlit run streamlit_home_loan_simulator.py
 
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import datetime
 import plotly.graph_objects as go
 import base64
 
-st.set_page_config(page_title="Home Loan vs Cash Simulator", layout="wide")
+st.set_page_config(page_title="Home Loan vs Rent Simulator", layout="wide")
 
-st.title("Home Loan vs Cash — Interactive Simulator")
+st.title("Home Loan vs Rent — Interactive Simulator")
 st.markdown(
-    "Use the controls in the left panel to change assumptions. The app calculates amortization, taxes (configurable regime with surcharges),\n"
-    "investment growth, house appreciation and shows year-by-year net-worth for both strategies (Loan vs Cash)."
+    "This simulator compares buying a house with a loan vs renting and investing the savings. "
+    "It accounts for taxes (old/new/auto regimes), investments, house appreciation, rent increases, "
+    "and configurable living expenses. Use the left panel to adjust assumptions."
 )
 
-LOAN_TENURE_YEARS_DEFAULT = 7
 # -------------------- Sidebar controls --------------------
-st.sidebar.header("Main assumptions")
-LOAN_AMOUNT = st.sidebar.number_input("Loan amount (INR)", value=40_00_000, step=50_000, format="%d")
-HOUSE_PRICE = st.sidebar.number_input("House price (INR)", value=50_00_000, step=50_000, format="%d")
-LOAN_TENURE_YEARS = st.sidebar.slider("Loan tenure (years)", 1, 30, LOAN_TENURE_YEARS_DEFAULT)
-LOAN_INTEREST_PERCENT = st.sidebar.slider("Loan interest (annual %)", 0.0, 20.0, 8.0, step=0.1)
+st.sidebar.header("Main Assumptions")
+HOUSE_PRICE = st.sidebar.number_input("House Price (INR)", value=50_00_000, step=50_000, format="%d")
+LOAN_AMOUNT = st.sidebar.number_input("Loan Amount (INR)", value=40_00_000, step=50_000, format="%d")
+LOAN_TENURE_YEARS = st.sidebar.slider("Loan Tenure (years)", 1, 30, 20)
+LOAN_INTEREST_PERCENT = st.sidebar.slider("Loan Interest (annual %)", 0.0, 20.0, 8.0, step=0.1)
 
 # Automatically calculate down payment
 down_payment = max(0, HOUSE_PRICE - LOAN_AMOUNT)
-
-st.sidebar.markdown(f"**Down Payment required:** ₹{down_payment:,.0f}")
-
-st.sidebar.markdown("---")
-INVESTMENT_RETURN_CAGR = st.sidebar.slider("Investment return (CAGR %)", 0.0, 25.0, 10.5, step=0.1)
-INFLATION_PERCENT_PER_YEAR = st.sidebar.slider("House inflation / appreciation (% p.a.)", 0.0, 15.0, 6.5, step=0.1)
+st.sidebar.markdown(f"**Down Payment Required:** ₹{down_payment:,.0f}")
 
 st.sidebar.markdown("---")
-EMPLOYEE_SALARY_CURRENT = st.sidebar.number_input("Current annual gross salary (INR)", value=14_50_000, step=50_000, format="%d")
-EMPLOYEE_SALARY_INCREMENT_PERCENT_PA = st.sidebar.slider("Salary growth (% p.a.)", 0.0, 30.0, 10.0, step=0.1)
-INITIAL_CASH = st.sidebar.number_input("Initial cash available (INR)", value=0, step=50_000, format="%d")
+st.sidebar.header("Rent Scenario Assumptions")
+INITIAL_MONTHLY_RENT = st.sidebar.number_input("Initial Monthly Rent (INR)", value=25_000, step=1_000, format="%d")
+RENT_INCREMENT_PERCENT = st.sidebar.slider("Rent Increment (% p.a.)", 0.0, 15.0, 5.0, step=0.1)
 
 st.sidebar.markdown("---")
-# Tax & deduction parameters
+INVESTMENT_RETURN_CAGR = st.sidebar.slider("Investment Return (CAGR %)", 0.0, 25.0, 10.5, step=0.1)
+INFLATION_PERCENT_PER_YEAR = st.sidebar.slider("House Appreciation (% p.a.)", 0.0, 15.0, 6.5, step=0.1)
+
+st.sidebar.markdown("---")
+EMPLOYEE_SALARY_CURRENT = st.sidebar.number_input("Current Annual Gross Salary (INR)", value=14_50_000, step=50_000, format="%d")
+EMPLOYEE_SALARY_INCREMENT_PERCENT_PA = st.sidebar.slider("Salary Growth (% p.a.)", 0.0, 30.0, 10.0, step=0.1)
+INITIAL_CASH = st.sidebar.number_input("Initial Cash Available (INR)", value=0, step=50_000, format="%d")
+EXPENSE_PERCENT = st.sidebar.slider("Living Expenses (% of net salary)", 0, 100, 50)
+
+st.sidebar.markdown("---")
+st.sidebar.header("Tax Parameters")
 tax_regime = st.sidebar.selectbox("Tax Regime", ["Old", "New", "Auto (choose lower)"], index=2)
-INTEREST_DEDUCTION_CAP_ANNUAL = st.sidebar.number_input("Interest deduction cap / year (Sec 24b, old regime only)", value=2_00_000, step=10_000, format="%d")
-PRINCIPAL_DEDUCTION_CAP_80C = st.sidebar.number_input("80C cap / year (old regime only)", value=1_50_000, step=10_000, format="%d")
-HEALTH_EDU_CESS = st.sidebar.number_input("Health & edu cess (fraction)", value=0.04, step=0.01, format="%.2f")
-YEARS = st.sidebar.slider("Simulation years", 1, 40, max(LOAN_TENURE_YEARS, 20))
+INTEREST_DEDUCTION_CAP_ANNUAL = st.sidebar.number_input("Interest Ded Cap (Sec 24b, old only)", value=2_00_000, step=10_000, format="%d")
+HEALTH_EDU_CESS = st.sidebar.number_input("Health & Edu Cess (fraction)", value=0.04, step=0.01, format="%.2f")
+YEARS = st.sidebar.slider("Simulation Years", 1, 40, max(LOAN_TENURE_YEARS, 20))
 
 st.sidebar.markdown("---")
-if st.sidebar.button("Reset defaults"):
+st.sidebar.header("Additional Deductions (Old Regime Only)")
+OTHER_80C_ANNUAL = st.sidebar.number_input("Other 80C Annual (PPF, ELSS etc.)", value=0, step=10_000, format="%d")
+NPS_EMPLOYEE_80CCD1B = st.sidebar.number_input("NPS Employee Addl (80CCD1B)", value=0, step=5_000, format="%d", max_value=50_000)
+NPS_EMPLOYER_PERCENT = st.sidebar.slider("NPS Employer % of Salary (80CCD2)", 0.0, 14.0, 0.0, step=0.1)
+HEALTH_80D = st.sidebar.number_input("80D Health Premium", value=0, step=5_000, format="%d", max_value=25_000)
+HRA_EXEMPTION_ANNUAL = st.sidebar.number_input("HRA Exemption Annual (for rent scenario)", value=0, step=10_000, format="%d")
+disability_options = {"None": 0, "Normal (₹75,000)": 75_000, "Severe (₹1,25,000)": 1_25_000}
+DISABILITY_80U = st.sidebar.selectbox("80U Disability Deduction", list(disability_options.keys()))
+
+st.sidebar.markdown("---")
+if st.sidebar.button("Reset Defaults"):
     st.rerun()
 
-# Hardcoded standard deductions per regime (updated for AY 2025-26)
+# Hardcoded constants
 STANDARD_DEDUCTION_OLD = 50_000
 STANDARD_DEDUCTION_NEW = 75_000
+SEC_80C_CAP = 1_50_000
+SEC_80CCD1B_CAP = 50_000
+SEC_80D_CAP = 25_000  # Basic limit
+SEC_80CCD2_CAP_PERCENT = 10.0  # Private sector limit, govt 14%
 
 # -------------------- Helper functions --------------------
 @st.cache_data
@@ -70,7 +87,7 @@ def amortization_schedule(principal, annual_rate_percent, tenure_months):
     balance = principal
     schedule = []
     r = annual_rate_percent / 100.0 / 12.0
-    for month in range(1, tenure_months+1):
+    for month in range(1, tenure_months + 1):
         interest = balance * r
         principal_paid = emi - interest
         balance -= principal_paid
@@ -96,80 +113,76 @@ def compute_annual_tax(taxable_income, slabs, regime, cess=0.04):
         if remaining <= 0:
             break
 
-    # Apply rebate u/s 87A
+    # Rebate u/s 87A
     if regime == "old":
-        if taxable_income <= 500000:
-            rebate = min(base_tax, 12500)
+        if taxable_income <= 5_00_000:
+            rebate = min(base_tax, 12_500)
             base_tax -= rebate
     else:  # new
-        if taxable_income <= 700000:
-            rebate = min(base_tax, 25000)
+        if taxable_income <= 7_00_000:
+            rebate = min(base_tax, 25_000)
             base_tax -= rebate
 
     base_tax = max(base_tax, 0.0)
 
     # Surcharge
     surcharge_rate = 0.0
-    if taxable_income > 5000000:
+    if taxable_income > 50_00_000:
         if regime == "old":
-            if taxable_income > 50000000:
+            if taxable_income > 5_00_00_000:
                 surcharge_rate = 0.37
-            elif taxable_income > 20000000:
+            elif taxable_income > 2_00_00_000:
                 surcharge_rate = 0.25
-            elif taxable_income > 10000000:
+            elif taxable_income > 1_00_00_000:
                 surcharge_rate = 0.15
             else:
                 surcharge_rate = 0.10
         else:  # new
-            if taxable_income > 20000000:
+            if taxable_income > 2_00_00_000:
                 surcharge_rate = 0.25
-            elif taxable_income > 10000000:
+            elif taxable_income > 1_00_00_000:
                 surcharge_rate = 0.15
             else:
                 surcharge_rate = 0.10
     surcharge = base_tax * surcharge_rate
 
-    # Total tax before cess
     total_tax = base_tax + surcharge
-
-    # Cess
     tax_with_cess = total_tax * (1 + cess)
     return tax_with_cess
 
-# Updated slabs for AY 2025-26 (resident under 60)
+# Tax slabs for AY 2025-26
 TAX_SLABS_OLD = [
-    (250000, 0.0),
-    (250000, 0.05),
-    (500000, 0.20),
-    (1e12, 0.30)  # Surcharge handled separately
+    (2_50_000, 0.0),
+    (2_50_000, 0.05),
+    (5_00_000, 0.20),
+    (1e12, 0.30)
 ]
 
 TAX_SLABS_NEW = [
-    (300000, 0.0),
-    (400000, 0.05),  # 3L-7L
-    (300000, 0.10),  # 7L-10L
-    (200000, 0.15),  # 10L-12L
-    (300000, 0.20),  # 12L-15L
-    (1e12, 0.30)     # >15L, surcharge separate
+    (3_00_000, 0.0),
+    (4_00_000, 0.05),
+    (3_00_000, 0.10),
+    (2_00_000, 0.15),
+    (3_00_000, 0.20),
+    (1e12, 0.30)
 ]
 
 # -------------------- Compute amortization & yearly aggregates --------------------
 tenure_months = LOAN_TENURE_YEARS * 12
 am_table = amortization_schedule(LOAN_AMOUNT, LOAN_INTEREST_PERCENT, tenure_months)
 
-# Yearly aggregation
 rows = []
-months_per_year = 12
 annual_salary = EMPLOYEE_SALARY_CURRENT
-investment_value_loan = max(0.0, INITIAL_CASH - down_payment)  # Deduct down payment from cash in loan scenario
-investment_value_cash = max(0.0, INITIAL_CASH - HOUSE_PRICE)  # Deduct full house price if cash purchase
-house_value_loan = HOUSE_PRICE
-house_value_cash = HOUSE_PRICE
+investment_value_loan = max(0.0, INITIAL_CASH - down_payment)
+investment_value_rent = INITIAL_CASH
+house_value = HOUSE_PRICE
 
-emi_per_year_list = []
-for y in range(0, YEARS):
-    start = y*12
-    end = min((y+1)*12, len(am_table))
+disability_ded = disability_options[DISABILITY_80U]
+
+for y in range(YEARS):
+    # Amortization slice
+    start = y * 12
+    end = min((y + 1) * 12, len(am_table))
     if start >= len(am_table):
         df_slice = pd.DataFrame(columns=am_table.columns)
     else:
@@ -177,77 +190,102 @@ for y in range(0, YEARS):
     interest_y = float(df_slice['interest'].sum()) if not df_slice.empty else 0.0
     principal_y = float(df_slice['principal_paid'].sum()) if not df_slice.empty else 0.0
     emi_y = float(df_slice['emi'].sum()) if not df_slice.empty else 0.0
-    emi_per_year_list.append(emi_y)
 
-    # Deductions (old regime only for loan-specific)
-    interest_deduction = min(interest_y, INTEREST_DEDUCTION_CAP_ANNUAL)
-    principal_deduction = min(principal_y, PRINCIPAL_DEDUCTION_CAP_80C)
+    # Annual rent
+    annual_rent = INITIAL_MONTHLY_RENT * 12 * (1 + RENT_INCREMENT_PERCENT / 100) ** y
 
-    # Loan scenario taxes
-    taxable_loan_old = max(0.0, annual_salary - STANDARD_DEDUCTION_OLD - interest_deduction - principal_deduction)
+    # Common deductions
+    ded_80ccd1b = min(SEC_80CCD1B_CAP, NPS_EMPLOYEE_80CCD1B)
+    ded_80ccd2 = min(SEC_80CCD2_CAP_PERCENT / 100 * annual_salary, NPS_EMPLOYER_PERCENT / 100 * annual_salary)
+    ded_80d = min(SEC_80D_CAP, HEALTH_80D)
+    ded_80u = disability_ded
+
+    # Loan scenario tax (old regime)
+    hra_loan = 0
+    interest_ded = min(interest_y, INTEREST_DEDUCTION_CAP_ANNUAL)
+    principal_ded = principal_y
+    ded_80c_loan = min(SEC_80C_CAP, OTHER_80C_ANNUAL + principal_ded)
+    chvia_ded_loan_old = ded_80c_loan + ded_80ccd1b + ded_80ccd2 + ded_80d + ded_80u
+    salary_income_loan_old = annual_salary - hra_loan - STANDARD_DEDUCTION_OLD
+    house_prop_loan = -interest_ded
+    gross_total_loan_old = salary_income_loan_old + house_prop_loan
+    taxable_loan_old = max(0.0, gross_total_loan_old - chvia_ded_loan_old)
     tax_loan_old = compute_annual_tax(taxable_loan_old, TAX_SLABS_OLD, "old", HEALTH_EDU_CESS)
-    taxable_loan_new = max(0.0, annual_salary - STANDARD_DEDUCTION_NEW)
-    tax_loan_new = compute_annual_tax(taxable_loan_new, TAX_SLABS_NEW, "new", HEALTH_EDU_CESS)
+
+    # Rent scenario tax (old regime)
+    hra_rent = HRA_EXEMPTION_ANNUAL
+    interest_ded_rent = 0
+    principal_ded_rent = 0
+    ded_80c_rent = min(SEC_80C_CAP, OTHER_80C_ANNUAL + principal_ded_rent)
+    chvia_ded_rent_old = ded_80c_rent + ded_80ccd1b + ded_80ccd2 + ded_80d + ded_80u
+    salary_income_rent_old = annual_salary - hra_rent - STANDARD_DEDUCTION_OLD
+    house_prop_rent = 0
+    gross_total_rent_old = salary_income_rent_old + house_prop_rent
+    taxable_rent_old = max(0.0, gross_total_rent_old - chvia_ded_rent_old)
+    tax_rent_old = compute_annual_tax(taxable_rent_old, TAX_SLABS_OLD, "old", HEALTH_EDU_CESS)
+
+    # New regime (same for both scenarios, no HRA, no interest/principal)
+    ded_new = ded_80ccd2  # Only 80CCD(2)
+    taxable_new = max(0.0, annual_salary - STANDARD_DEDUCTION_NEW - ded_new)
+    tax_new = compute_annual_tax(taxable_new, TAX_SLABS_NEW, "new", HEALTH_EDU_CESS)
+
+    # Select tax based on regime
     if tax_regime == "Old":
         tax_loan = tax_loan_old
+        tax_rent = tax_rent_old
     elif tax_regime == "New":
-        tax_loan = tax_loan_new
-    else:
-        tax_loan = min(tax_loan_old, tax_loan_new)
+        tax_loan = tax_new
+        tax_rent = tax_new
+    else:  # Auto
+        tax_loan = min(tax_loan_old, tax_new)
+        tax_rent = min(tax_rent_old, tax_new)
 
-    # Cash scenario taxes
-    taxable_cash_old = max(0.0, annual_salary - STANDARD_DEDUCTION_OLD)
-    tax_cash_old = compute_annual_tax(taxable_cash_old, TAX_SLABS_OLD, "old", HEALTH_EDU_CESS)
-    taxable_cash_new = max(0.0, annual_salary - STANDARD_DEDUCTION_NEW)
-    tax_cash_new = compute_annual_tax(taxable_cash_new, TAX_SLABS_NEW, "new", HEALTH_EDU_CESS)
-    if tax_regime == "Old":
-        tax_cash = tax_cash_old
-    elif tax_regime == "New":
-        tax_cash = tax_cash_new
-    else:
-        tax_cash = min(tax_cash_old, tax_cash_new)
+    # Investable amounts
+    in_hand_loan = annual_salary - tax_loan
+    expenses_loan = (EXPENSE_PERCENT / 100.0) * in_hand_loan
+    remaining_loan = in_hand_loan - expenses_loan
+    investable_loan = max(0.0, remaining_loan - emi_y)
 
-    investable_loan = max(0.0, annual_salary - tax_loan - emi_y)
-    investable_cash = max(0.0, annual_salary - tax_cash)
+    in_hand_rent = annual_salary - tax_rent
+    expenses_rent = (EXPENSE_PERCENT / 100.0) * in_hand_rent
+    remaining_rent = in_hand_rent - expenses_rent
+    investable_rent = max(0.0, remaining_rent - annual_rent)
 
-    # Grow investments
-    investment_value_loan = investment_value_loan * (1 + INVESTMENT_RETURN_CAGR/100.0) + investable_loan
-    investment_value_cash = investment_value_cash * (1 + INVESTMENT_RETURN_CAGR/100.0) + investable_cash
+    # Grow investments and house
+    investment_value_loan = investment_value_loan * (1 + INVESTMENT_RETURN_CAGR / 100.0) + investable_loan
+    investment_value_rent = investment_value_rent * (1 + INVESTMENT_RETURN_CAGR / 100.0) + investable_rent
+    house_value = house_value * (1 + INFLATION_PERCENT_PER_YEAR / 100.0)
 
-    # Grow house values by inflation
-    house_value_loan = house_value_loan * (1 + INFLATION_PERCENT_PER_YEAR/100.0)
-    house_value_cash = house_value_cash * (1 + INFLATION_PERCENT_PER_YEAR/100.0)
-
-    # outstanding balance at year end
-    if (y+1)*12-1 < len(am_table):
-        balance = float(am_table.iloc[(y+1)*12-1]['balance'])
+    # Loan balance
+    if (y + 1) * 12 - 1 < len(am_table):
+        balance = float(am_table.iloc[(y + 1) * 12 - 1]['balance'])
     else:
         balance = 0.0
 
-    net_worth_loan = investment_value_loan + house_value_loan - balance
-    net_worth_cash = investment_value_cash + house_value_cash
+    net_worth_loan = investment_value_loan + house_value - balance
+    net_worth_rent = investment_value_rent
 
     rows.append({
-        'year': y+1,
+        'year': y + 1,
         'annual_salary': annual_salary,
         'interest_paid': interest_y,
         'principal_paid': principal_y,
         'emi_paid': emi_y,
+        'annual_rent': annual_rent,
         'tax_loan': tax_loan,
-        'tax_cash': tax_cash,
+        'tax_rent': tax_rent,
         'investable_loan': investable_loan,
-        'investable_cash': investable_cash,
+        'investable_rent': investable_rent,
         'investment_value_loan': investment_value_loan,
-        'investment_value_cash': investment_value_cash,
-        'house_value_loan': house_value_loan,
-        'house_value_cash': house_value_cash,
+        'investment_value_rent': investment_value_rent,
+        'house_value': house_value,
         'loan_outstanding_balance_end_of_year': balance,
         'net_worth_loan': net_worth_loan,
-        'net_worth_cash': net_worth_cash
+        'net_worth_rent': net_worth_rent
     })
 
-    # salary bump
-    annual_salary *= (1 + EMPLOYEE_SALARY_INCREMENT_PERCENT_PA/100.0)
+    # Salary increment
+    annual_salary *= (1 + EMPLOYEE_SALARY_INCREMENT_PERCENT_PA / 100.0)
 
 # DataFrame
 df = pd.DataFrame(rows)
@@ -255,50 +293,61 @@ df = pd.DataFrame(rows)
 # -------------------- Display key results --------------------
 col1, col2 = st.columns([2, 1])
 with col1:
-    st.subheader("Net worth evolution")
+    st.subheader("Net Worth Evolution")
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df['year'], y=df['net_worth_loan'], mode='lines+markers', name='Net worth (Loan)'))
-    fig.add_trace(go.Scatter(x=df['year'], y=df['net_worth_cash'], mode='lines+markers', name='Net worth (Cash)'))
-    fig.update_layout(title='Net worth over time (Loan vs Cash)', xaxis_title='Year', yaxis_title='INR', legend=dict(x=0.02, y=0.98))
+    fig.add_trace(go.Scatter(x=df['year'], y=df['net_worth_loan'], mode='lines+markers', name='Net Worth (Loan)'))
+    fig.add_trace(go.Scatter(x=df['year'], y=df['net_worth_rent'], mode='lines+markers', name='Net Worth (Rent)'))
+    fig.update_layout(title='Net Worth Over Time (Loan vs Rent)', xaxis_title='Year', yaxis_title='INR', legend=dict(x=0.02, y=0.98))
     st.plotly_chart(fig, use_container_width=True)
 
-    st.subheader("Detailed components (select years)")
+    st.subheader("Detailed Components (select years)")
     show_years = st.slider("Select years to show in table", 1, YEARS, (1, min(10, YEARS)))
     st.dataframe(df.loc[df['year'].between(show_years[0], show_years[1])].reset_index(drop=True))
 
 with col2:
-    st.subheader("Summary (end of simulation)")
+    st.subheader("Summary (End of Simulation)")
     final = df.iloc[-1]
-    st.metric("Net worth (Loan)", f"₹{final['net_worth_loan']:,.0f}")
-    st.metric("Net worth (Cash)", f"₹{final['net_worth_cash']:,.0f}")
+    st.metric("Net Worth (Loan)", f"₹{final['net_worth_loan']:,.0f}")
+    st.metric("Net Worth (Rent)", f"₹{final['net_worth_rent']:,.0f}")
     st.metric("Down Payment", f"₹{down_payment:,.0f}")
     st.write("\n")
-    st.write("**Totals over period**")
+    st.write("**Totals Over Period**")
     total_emi = df['emi_paid'].sum()
     total_interest = df['interest_paid'].sum()
-    st.write(f"Total EMI paid over {YEARS} yrs: ₹{total_emi:,.0f}")
-    st.write(f"Total interest paid over {YEARS} yrs: ₹{total_interest:,.0f}")
+    total_tax_loan = df['tax_loan'].sum()
+    total_tax_rent = df['tax_rent'].sum()
+    tax_saved_by_loan = total_tax_rent - total_tax_loan
+    st.write(f"Total EMI Paid over {YEARS} yrs: ₹{total_emi:,.0f}")
+    st.write(f"Total Interest Paid over {YEARS} yrs: ₹{total_interest:,.0f}")
+    st.write(f"Total Tax Paid (Loan): ₹{total_tax_loan:,.0f}")
+    st.write(f"Total Tax Paid (Rent): ₹{total_tax_rent:,.0f}")
+    st.write(f"Tax Saved by Loan: ₹{tax_saved_by_loan:,.0f}" if tax_saved_by_loan > 0 else f"Extra Tax in Loan: ₹{-tax_saved_by_loan:,.0f}")
 
 # -------------------- Additional plots --------------------
 st.markdown("---")
-st.subheader("Breakdown plot")
+st.subheader("Breakdown Plot (Loan Scenario)")
 fig2 = go.Figure()
 fig2.add_trace(go.Bar(x=df['year'], y=df['investment_value_loan'], name='Investment (Loan)'))
-fig2.add_trace(go.Bar(x=df['year'], y=df['house_value_loan'], name='House value'))
-fig2.add_trace(go.Bar(x=df['year'], y=-df['loan_outstanding_balance_end_of_year'], name='Loan outstanding (negative)'))
-fig2.update_layout(barmode='stack', title='Loan scenario: investments, house value and outstanding loan', xaxis_title='Year')
+fig2.add_trace(go.Bar(x=df['year'], y=df['house_value'], name='House Value'))
+fig2.add_trace(go.Bar(x=df['year'], y=-df['loan_outstanding_balance_end_of_year'], name='Loan Outstanding (negative)'))
+fig2.update_layout(barmode='stack', title='Loan Scenario: Investments, House Value, and Outstanding Loan', xaxis_title='Year')
 st.plotly_chart(fig2, use_container_width=True)
+
+# -------------------- Tax Breakdown --------------------
+st.markdown("---")
+st.subheader("Tax Breakdown Over Years")
+st.dataframe(df[['year', 'tax_loan', 'tax_rent']])
 
 # -------------------- Export / Download --------------------
 st.markdown("---")
 st.subheader("Export")
 csv = df.to_csv(index=False)
 b64 = base64.b64encode(csv.encode()).decode()
-href = f'<a href="data:text/csv;base64,{b64}" download="loan_vs_cash_yearly.csv">Download year-by-year CSV</a>'
+href = f'<a href="data:text/csv;base64,{b64}" download="loan_vs_rent_yearly.csv">Download Year-by-Year CSV</a>'
 st.markdown(href, unsafe_allow_html=True)
 
-st.info("Tip: change parameters on the left; charts and table update automatically.")
+st.info("Tip: Change parameters on the left; charts and table update automatically. INITIAL_CASH is the starting cash balance, used for down payment in loan or fully invested in rent scenario.")
 
 # -------------------- Footer --------------------
 st.markdown("---")
-st.caption("Model notes: \n1) Tax calculation includes basic slabs, rebate u/s 87A, surcharge (no marginal relief), and cess for AY 2025-26; simplified and does not include every possible deduction or nuance.\n2) Standard deduction: ₹50,000 (old), ₹75,000 (new).\n3) Investments are modelled as end-of-year contributions grown at a constant CAGR. \n4) House appreciation is modelled as a constant annual percent. \n5) This is a financial model for comparison & education, not financial advice.")
+st.caption("Model Notes: \n1) Tax calculations are simplified for AY 2025-26, including slabs, rebates, surcharges, and cess; does not cover all nuances or additional incomes. \n2) Deductions apply only in old regime except 80CCD(2). \n3) Investments grow at constant CAGR with end-of-year contributions. \n4) House appreciation and rent increases are annual constants. \n5) EMI/rent constraints: Investable set to max(0, remaining after expenses - EMI/rent). \n6) This is for educational comparison, not financial advice.")
