@@ -19,9 +19,9 @@ st.markdown(
 # -------------------- Sidebar controls --------------------
 st.sidebar.header("Main Assumptions")
 HOUSE_PRICE = st.sidebar.number_input("House Price (INR)", value=50_00_000, step=50_000, format="%d")
-LOAN_AMOUNT = st.sidebar.number_input("Loan Amount (INR)", value=40_00_000, step=50_000, format="%d")
-LOAN_TENURE_YEARS = st.sidebar.slider("Loan Tenure (years)", 1, 30, 20)
-LOAN_INTEREST_PERCENT = st.sidebar.slider("Loan Interest (annual %)", 0.0, 20.0, 8.0, step=0.1)
+LOAN_AMOUNT = st.sidebar.number_input("Loan Amount (INR)", value=45_00_000, step=50_000, format="%d")
+LOAN_TENURE_YEARS = st.sidebar.slider("Loan Tenure (years)", 1, 30, 7)
+LOAN_INTEREST_PERCENT = st.sidebar.slider("Loan Interest (annual %)", 0.0, 20.0, 12.0, step=0.1)
 
 # Automatically calculate down payment
 down_payment = max(0, HOUSE_PRICE - LOAN_AMOUNT)
@@ -29,8 +29,8 @@ st.sidebar.markdown(f"**Down Payment Required:** ₹{down_payment:,.0f}")
 
 st.sidebar.markdown("---")
 st.sidebar.header("Rent Scenario Assumptions")
-INITIAL_MONTHLY_RENT = st.sidebar.number_input("Initial Monthly Rent (INR)", value=25_000, step=1_000, format="%d")
-RENT_INCREMENT_PERCENT = st.sidebar.slider("Rent Increment (% p.a.)", 0.0, 15.0, 5.0, step=0.1)
+INITIAL_MONTHLY_RENT = st.sidebar.number_input("Initial Monthly Rent (INR)", value=15_000, step=1_000, format="%d")
+RENT_INCREMENT_PERCENT = st.sidebar.slider("Rent Increment (% p.a.)", 0.0, 15.0, 12.0, step=0.1)
 
 st.sidebar.markdown("---")
 INVESTMENT_RETURN_CAGR = st.sidebar.slider("Investment Return (CAGR %)", 0.0, 25.0, 10.5, step=0.1)
@@ -47,7 +47,7 @@ st.sidebar.header("Tax Parameters")
 tax_regime = st.sidebar.selectbox("Tax Regime", ["Old", "New", "Auto (choose lower)"], index=2)
 INTEREST_DEDUCTION_CAP_ANNUAL = st.sidebar.number_input("Interest Ded Cap (Sec 24b, old only)", value=2_00_000, step=10_000, format="%d")
 HEALTH_EDU_CESS = st.sidebar.number_input("Health & Edu Cess (fraction)", value=0.04, step=0.01, format="%.2f")
-YEARS = st.sidebar.slider("Simulation Years", 1, 40, max(LOAN_TENURE_YEARS, 20))
+YEARS = st.sidebar.slider("Simulation Years", 1, 40, 7)
 
 st.sidebar.markdown("---")
 st.sidebar.header("Additional Deductions (Old Regime Only)")
@@ -172,6 +172,7 @@ tenure_months = LOAN_TENURE_YEARS * 12
 am_table = amortization_schedule(LOAN_AMOUNT, LOAN_INTEREST_PERCENT, tenure_months)
 
 rows = []
+tax_details = []
 annual_salary = EMPLOYEE_SALARY_CURRENT
 investment_value_loan = max(0.0, INITIAL_CASH - down_payment)
 investment_value_rent = INITIAL_CASH
@@ -225,20 +226,34 @@ for y in range(YEARS):
     tax_rent_old = compute_annual_tax(taxable_rent_old, TAX_SLABS_OLD, "old", HEALTH_EDU_CESS)
 
     # New regime (same for both scenarios, no HRA, no interest/principal)
-    ded_new = ded_80ccd2  # Only 80CCD(2)
-    taxable_new = max(0.0, annual_salary - STANDARD_DEDUCTION_NEW - ded_new)
+    hra_new = 0
+    house_prop_new = 0
+    ded_80c_new = 0
+    ded_80ccd1b_new = 0
+    ded_80d_new = 0
+    ded_80u_new = 0
+    chvia_ded_new = ded_80ccd2  # Only 80CCD(2)
+    salary_income_new = annual_salary - hra_new - STANDARD_DEDUCTION_NEW
+    gross_total_new = salary_income_new + house_prop_new
+    taxable_new = max(0.0, gross_total_new - chvia_ded_new)
     tax_new = compute_annual_tax(taxable_new, TAX_SLABS_NEW, "new", HEALTH_EDU_CESS)
 
     # Select tax based on regime
     if tax_regime == "Old":
         tax_loan = tax_loan_old
         tax_rent = tax_rent_old
+        selected_regime_loan = "Old"
+        selected_regime_rent = "Old"
     elif tax_regime == "New":
         tax_loan = tax_new
         tax_rent = tax_new
+        selected_regime_loan = "New"
+        selected_regime_rent = "New"
     else:  # Auto
         tax_loan = min(tax_loan_old, tax_new)
         tax_rent = min(tax_rent_old, tax_new)
+        selected_regime_loan = "Old" if tax_loan == tax_loan_old else "New"
+        selected_regime_rent = "Old" if tax_rent == tax_rent_old else "New"
 
     # Investable amounts
     in_hand_loan = annual_salary - tax_loan
@@ -281,14 +296,98 @@ for y in range(YEARS):
         'house_value': house_value,
         'loan_outstanding_balance_end_of_year': balance,
         'net_worth_loan': net_worth_loan,
-        'net_worth_rent': net_worth_rent
+        'net_worth_rent': net_worth_rent,
+        'selected_regime_loan': selected_regime_loan,
+        'selected_regime_rent': selected_regime_rent
+    })
+
+    # Tax details
+    # Loan Old
+    tax_details.append({
+        'year': y + 1,
+        'scenario': 'Loan',
+        'regime': 'Old',
+        'gross_salary': annual_salary,
+        'standard_deduction': STANDARD_DEDUCTION_OLD,
+        'hra_exemption': hra_loan,
+        'house_property_loss': house_prop_loan,
+        'sec_80c': ded_80c_loan,
+        'sec_80ccd1b': ded_80ccd1b,
+        'sec_80ccd2': ded_80ccd2,
+        'sec_80d': ded_80d,
+        'sec_80u': ded_80u,
+        'total_chapter_via_deductions': chvia_ded_loan_old,
+        'gross_total_income': gross_total_loan_old,
+        'taxable_income': taxable_loan_old,
+        'tax_amount': tax_loan_old
+    })
+
+    # Rent Old
+    tax_details.append({
+        'year': y + 1,
+        'scenario': 'Rent',
+        'regime': 'Old',
+        'gross_salary': annual_salary,
+        'standard_deduction': STANDARD_DEDUCTION_OLD,
+        'hra_exemption': hra_rent,
+        'house_property_loss': house_prop_rent,
+        'sec_80c': ded_80c_rent,
+        'sec_80ccd1b': ded_80ccd1b,
+        'sec_80ccd2': ded_80ccd2,
+        'sec_80d': ded_80d,
+        'sec_80u': ded_80u,
+        'total_chapter_via_deductions': chvia_ded_rent_old,
+        'gross_total_income': gross_total_rent_old,
+        'taxable_income': taxable_rent_old,
+        'tax_amount': tax_rent_old
+    })
+
+    # Loan New
+    tax_details.append({
+        'year': y + 1,
+        'scenario': 'Loan',
+        'regime': 'New',
+        'gross_salary': annual_salary,
+        'standard_deduction': STANDARD_DEDUCTION_NEW,
+        'hra_exemption': hra_new,
+        'house_property_loss': house_prop_new,
+        'sec_80c': ded_80c_new,
+        'sec_80ccd1b': ded_80ccd1b_new,
+        'sec_80ccd2': ded_80ccd2,
+        'sec_80d': ded_80d_new,
+        'sec_80u': ded_80u_new,
+        'total_chapter_via_deductions': chvia_ded_new,
+        'gross_total_income': gross_total_new,
+        'taxable_income': taxable_new,
+        'tax_amount': tax_new
+    })
+
+    # Rent New (same as Loan New)
+    tax_details.append({
+        'year': y + 1,
+        'scenario': 'Rent',
+        'regime': 'New',
+        'gross_salary': annual_salary,
+        'standard_deduction': STANDARD_DEDUCTION_NEW,
+        'hra_exemption': hra_new,
+        'house_property_loss': house_prop_new,
+        'sec_80c': ded_80c_new,
+        'sec_80ccd1b': ded_80ccd1b_new,
+        'sec_80ccd2': ded_80ccd2,
+        'sec_80d': ded_80d_new,
+        'sec_80u': ded_80u_new,
+        'total_chapter_via_deductions': chvia_ded_new,
+        'gross_total_income': gross_total_new,
+        'taxable_income': taxable_new,
+        'tax_amount': tax_new
     })
 
     # Salary increment
     annual_salary *= (1 + EMPLOYEE_SALARY_INCREMENT_PERCENT_PA / 100.0)
 
-# DataFrame
+# DataFrames
 df = pd.DataFrame(rows)
+df_tax = pd.DataFrame(tax_details)
 
 # -------------------- Display key results --------------------
 col1, col2 = st.columns([2, 1])
@@ -304,21 +403,29 @@ with col1:
     show_years = st.slider("Select years to show in table", 1, YEARS, (1, min(10, YEARS)))
     st.dataframe(df.loc[df['year'].between(show_years[0], show_years[1])].reset_index(drop=True))
 
+    st.subheader("Detailed Tax Breakdown (All Regimes)")
+    st.dataframe(df_tax)
+
 with col2:
     st.subheader("Summary (End of Simulation)")
     final = df.iloc[-1]
     st.metric("Net Worth (Loan)", f"₹{final['net_worth_loan']:,.0f}")
     st.metric("Net Worth (Rent)", f"₹{final['net_worth_rent']:,.0f}")
     st.metric("Down Payment", f"₹{down_payment:,.0f}")
+    st.metric("Final Loan Outstanding", f"₹{final['loan_outstanding_balance_end_of_year']:,.0f}")
     st.write("\n")
     st.write("**Totals Over Period**")
     total_emi = df['emi_paid'].sum()
     total_interest = df['interest_paid'].sum()
+    total_principal = df['principal_paid'].sum()
     total_tax_loan = df['tax_loan'].sum()
     total_tax_rent = df['tax_rent'].sum()
     tax_saved_by_loan = total_tax_rent - total_tax_loan
+    total_rent = df['annual_rent'].sum()
     st.write(f"Total EMI Paid over {YEARS} yrs: ₹{total_emi:,.0f}")
     st.write(f"Total Interest Paid over {YEARS} yrs: ₹{total_interest:,.0f}")
+    st.write(f"Total Principal Paid over {YEARS} yrs: ₹{total_principal:,.0f}")
+    st.write(f"Total Rent Paid over {YEARS} yrs: ₹{total_rent:,.0f}")
     st.write(f"Total Tax Paid (Loan): ₹{total_tax_loan:,.0f}")
     st.write(f"Total Tax Paid (Rent): ₹{total_tax_rent:,.0f}")
     st.write(f"Tax Saved by Loan: ₹{tax_saved_by_loan:,.0f}" if tax_saved_by_loan > 0 else f"Extra Tax in Loan: ₹{-tax_saved_by_loan:,.0f}")
@@ -333,11 +440,6 @@ fig2.add_trace(go.Bar(x=df['year'], y=-df['loan_outstanding_balance_end_of_year'
 fig2.update_layout(barmode='stack', title='Loan Scenario: Investments, House Value, and Outstanding Loan', xaxis_title='Year')
 st.plotly_chart(fig2, use_container_width=True)
 
-# -------------------- Tax Breakdown --------------------
-st.markdown("---")
-st.subheader("Tax Breakdown Over Years")
-st.dataframe(df[['year', 'tax_loan', 'tax_rent']])
-
 # -------------------- Export / Download --------------------
 st.markdown("---")
 st.subheader("Export")
@@ -345,6 +447,11 @@ csv = df.to_csv(index=False)
 b64 = base64.b64encode(csv.encode()).decode()
 href = f'<a href="data:text/csv;base64,{b64}" download="loan_vs_rent_yearly.csv">Download Year-by-Year CSV</a>'
 st.markdown(href, unsafe_allow_html=True)
+
+tax_csv = df_tax.to_csv(index=False)
+tax_b64 = base64.b64encode(tax_csv.encode()).decode()
+tax_href = f'<a href="data:text/csv;base64,{tax_b64}" download="tax_breakdown.csv">Download Tax Breakdown CSV</a>'
+st.markdown(tax_href, unsafe_allow_html=True)
 
 st.info("Tip: Change parameters on the left; charts and table update automatically. INITIAL_CASH is the starting cash balance, used for down payment in loan or fully invested in rent scenario.")
 
