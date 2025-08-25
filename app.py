@@ -18,9 +18,14 @@ st.markdown(
 # -------------------- Sidebar controls --------------------
 st.sidebar.header("Main assumptions")
 LOAN_AMOUNT = st.sidebar.number_input("Loan amount (INR)", value=50_00_000, step=50_000, format="%d")
-HOUSE_PRICE = st.sidebar.number_input("House price (INR)", value=int(LOAN_AMOUNT), step=50_000, format="%d")
+HOUSE_PRICE = st.sidebar.number_input("House price (INR)", value=45_00_000, step=50_000, format="%d")
 LOAN_TENURE_YEARS = st.sidebar.slider("Loan tenure (years)", 1, 30, 20)
 LOAN_INTEREST_PERCENT = st.sidebar.slider("Loan interest (annual %)", 0.0, 20.0, 8.0, step=0.1)
+
+# Automatically calculate down payment
+down_payment = max(0, HOUSE_PRICE - LOAN_AMOUNT)
+
+st.sidebar.markdown(f"**Down Payment required:** ₹{down_payment:,.0f}")
 
 st.sidebar.markdown("---")
 INVESTMENT_RETURN_CAGR = st.sidebar.slider("Investment return (CAGR %)", 0.0, 25.0, 10.5, step=0.1)
@@ -104,8 +109,8 @@ am_table = amortization_schedule(LOAN_AMOUNT, LOAN_INTEREST_PERCENT, tenure_mont
 rows = []
 months_per_year = 12
 annual_salary = EMPLOYEE_SALARY_CURRENT
-investment_value_loan = INITIAL_CASH
-investment_value_cash = max(0.0, INITIAL_CASH - HOUSE_PRICE)
+investment_value_loan = INITIAL_CASH - down_payment  # Deduct down payment from cash in loan scenario
+investment_value_cash = max(0.0, INITIAL_CASH - HOUSE_PRICE)  # Deduct full house price if cash purchase
 house_value_loan = HOUSE_PRICE
 house_value_cash = HOUSE_PRICE
 
@@ -197,6 +202,7 @@ with col2:
     final = df.iloc[-1]
     st.metric("Net worth (Loan)", f"₹{final['net_worth_loan']:,.0f}")
     st.metric("Net worth (Cash)", f"₹{final['net_worth_cash']:,.0f}")
+    st.metric("Down Payment", f"₹{down_payment:,.0f}")
     st.write("\n")
     st.write("**Totals over period**")
     total_emi = df['emi_paid'].sum()
